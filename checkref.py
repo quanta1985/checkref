@@ -106,6 +106,8 @@ with st.sidebar:
 # Main content
 st.title("📑 Kiểm tra Trích dẫn & Tài liệu tham khảo")
 st.caption("Phiên bản v4.0 | Hỗ trợ phát hiện lỗi thiếu/thừa danh mục tự động")
+st.caption("Phần mềm vẫn đang trong quát trình hoàn thiện nên vẫn còn nhiều sai sót, chỉ dùng để kiểm tra nhanh")
+
 
 if uploaded_file:
     # Nút bấm kích hoạt
