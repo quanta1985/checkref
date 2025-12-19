@@ -5,7 +5,7 @@ import pandas as pd
 from docx import Document
 from pypdf import PdfReader
 
-# --- 1. CẤU HÌNH & CSS (GIỮ NGUYÊN) ---
+# --- 1. CẤU HÌNH & CSS (GIỮ NGUYÊN 100%) ---
 st.set_page_config(
     page_title="Citation Pro | Công cụ Kiểm tra Trích dẫn",
     page_icon="🎓",
@@ -47,12 +47,17 @@ def extract_text_from_pdf(file):
         return text
     except: return "ERROR_PDF"
 
-# === HÀM MỚI: KIỂM TRA TÀI LIỆU PHÁP LUẬT/TIÊU CHUẨN ===
+# === HÀM HÀN GẮN TỪ BỊ NGẮT DÒNG (FIX LỖI RAH-MATI) ===
+def heal_hyphenated_words(text):
+    """
+    Tìm các từ bị ngắt dòng bằng dấu gạch nối và nối chúng lại.
+    VD: 'Rah-\n mati' -> 'Rahmati'
+    VD: 'environ-\n ment' -> 'environment'
+    """
+    # Regex: Tìm dấu gạch nối (-), theo sau là có thể có khoảng trắng, rồi xuống dòng, rồi khoảng trắng
+    return re.sub(r'-\s*\n\s*', '', text)
+
 def is_legal_or_standard(text):
-    """
-    Trả về True nếu text chứa các từ khóa về luật, tiêu chuẩn, quy chuẩn.
-    Những tài liệu này sẽ được BỎ QUA khi check lỗi.
-    """
     text_lower = text.lower()
     keywords = [
         'tcvn', 'qcvn', 'iso', 'luật', 'nghị định', 'quyết định', 'thông tư', 
@@ -84,7 +89,7 @@ def is_valid_citation_candidate(name_part, year):
     return True
 
 def clean_text_segment(text_segment):
-    text_segment = re.sub(r'-\s*\n\s*', '', text_segment)
+    # Vẫn giữ hàm này để clean cục bộ bên trong regex
     text_segment = text_segment.replace('\n', ' ').replace('\r', ' ')
     text_segment = re.sub(r'\s+', ' ', text_segment)
     return text_segment
@@ -93,6 +98,7 @@ def find_citations_v7(text):
     citations = []
     
     # Pattern 1: (...)
+    # Regex tìm nội dung trong ngoặc đơn
     for match in re.finditer(r'\(([^)]*?\d{4}[^)]*?)\)', text):
         raw_content = match.group(1)
         content = clean_text_segment(raw_content)
@@ -102,7 +108,6 @@ def find_citations_v7(text):
             year_match = re.search(r'(\d{4})[a-z]?', part) 
             if year_match:
                 year = year_match.group(1)
-                # FIX: Thêm rstrip(':') để loại bỏ dấu 2 chấm thừa (QCVN 08:, 2023)
                 name_part = part[:year_match.start()].strip().rstrip(',').rstrip(':').strip()
                 
                 if len(name_part) > 1 and is_valid_citation_candidate(name_part, year):
@@ -129,9 +134,7 @@ def find_citations_v7(text):
     return unique_citations
 
 def check_citation_in_refs(cit_name, cit_year, refs_list):
-    # Nếu là văn bản pháp luật -> Luôn coi là ĐÚNG (Skip check)
-    if is_legal_or_standard(cit_name):
-        return True
+    if is_legal_or_standard(cit_name): return True
 
     stopwords_regex = r'(et al\.?|và nnk\.?|và cộng sự|& cs\.?|&|and|,\s*cs)'
     clean_cit_name = re.sub(stopwords_regex, ' ', cit_name, flags=re.IGNORECASE).strip()
@@ -139,7 +142,8 @@ def check_citation_in_refs(cit_name, cit_year, refs_list):
     
     for ref in refs_list:
         if cit_year in ref:
-            ref_clean = clean_text_segment(ref)
+            # Clean ref line để so sánh chính xác
+            ref_clean = ref.replace('\n', ' ')
             ref_lower = ref_clean.lower()
             
             if clean_cit_name.lower() in ref_lower: return True
@@ -162,7 +166,7 @@ with st.sidebar:
         2. Chờ hệ thống tự động quét.
         3. Xem kết quả tại Dashboard bên phải.
         """)
-    st.caption("Version 7.2 (Legal Filter) | Build by Quan HUMG")
+    st.caption("Version 7.3 (Hyphen Fix) | Build by Quan HUMG")
 
 if not uploaded_file:
     st.markdown("<div style='text-align: center; padding: 50px;'>", unsafe_allow_html=True)
@@ -198,25 +202,22 @@ else:
                 body_text = full_text[:matches[-1].start()]
                 ref_text = full_text[split_idx:]
             
+            # === ÁP DỤNG FIX LỖI RAH-MATI (Cắt nối từ) TẠI ĐÂY ===
+            body_text = heal_hyphenated_words(body_text)
+            
             ref_lines = [line.strip() for line in ref_text.split('\n') if len(line.strip()) > 10 and re.search(r'\d{4}', line)]
             citations = find_citations_v7(body_text)
 
-            # --- LOGIC FILTER (LỌC BỎ PHÁP LUẬT) ---
+            # Logic Check
             missing_refs = []
             for cit in citations:
-                # Nếu tên trích dẫn chứa từ khóa Luật/TCVN -> Bỏ qua không check
-                if is_legal_or_standard(cit['name']):
-                    continue
-                    
+                if is_legal_or_standard(cit['name']): continue
                 if not check_citation_in_refs(cit['name'], cit['year'], ref_lines):
                     missing_refs.append(cit['full'])
 
             unused_refs = []
             for ref in ref_lines:
-                # Nếu dòng Reference chứa từ khóa Luật/TCVN -> Bỏ qua không báo thừa
-                if is_legal_or_standard(ref):
-                    continue
-
+                if is_legal_or_standard(ref): continue
                 ref_year_match = re.search(r'\d{4}', ref)
                 if ref_year_match:
                     r_year = ref_year_match.group(0)
