@@ -1,3 +1,7 @@
 streamlit
 python-docx
 pypdf
+thefuzz
+pandas
+re
+time
