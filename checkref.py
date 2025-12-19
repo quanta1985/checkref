@@ -6,8 +6,8 @@ from pypdf import PdfReader
 
 # --- CẤU HÌNH GIAO DIỆN ---
 st.set_page_config(
-    page_title="Citation Pro Checker v5",
-    page_icon="✅",
+    page_title="Citation Pro Checker v6",
+    page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -48,44 +48,82 @@ def extract_text_from_pdf(file):
     except:
         return "ERROR_PDF"
 
-# --- 2. HÀM TÌM TRÍCH DẪN (NÂNG CẤP XỬ LÝ DẤU CHẤM PHẨY) ---
-def find_citations_v5(text):
+# --- 2. BỘ LỌC THÔNG MINH (CHẶN NGÀY THÁNG, SỐ LIỆU) ---
+def is_valid_citation_candidate(name_part, year):
+    # 1. Kiểm tra năm hợp lệ (Chỉ chấp nhận từ 1800 đến 2030)
+    # Loại bỏ số liệu kiểu "6742"
+    try:
+        y = int(year)
+        if y < 1800 or y > 2030:
+            return False
+    except:
+        return False
+
+    name_lower = name_part.lower()
+
+    # 2. Từ khóa BLACKLIST (Nếu tên chứa từ này -> Không phải trích dẫn)
+    # Loại bỏ: tháng 8, ngày 1, hình 1, bảng 2, hệ số, phương trình...
+    blacklist = [
+        'tháng', 'ngày', 'năm', 'lúc', 'trước', 'sau', 'khoảng', 
+        'hình', 'bảng', 'biểu', 'sơ đồ', 'phương trình', 'công thức',
+        'hệ số', 'giá trị', 'tỉ lệ', 'kết quả', 'đoạn', 'phần', 'mục'
+    ]
+    
+    for word in blacklist:
+        # Kiểm tra từ đơn để tránh bắt nhầm tên người (VD: "Nguyệt" chứa "ngày" -> check kỹ hơn nếu cần)
+        # Ở đây dùng check đơn giản: ' từ ' hoặc bắt đầu bằng 'từ '
+        if f" {word} " in f" {name_lower} ": 
+            return False
+
+    # 3. Ký tự toán học/đặc biệt BLACKLIST
+    # Loại bỏ: 1/7/2025 (chứa /), Scf = 0 (chứa =), > <
+    invalid_chars = ['/', '=', '>', '<', '%', '+']
+    for char in invalid_chars:
+        if char in name_part:
+            return False
+            
+    # 4. Kiểm tra độ dài tên
+    # Tên tác giả thường không quá dài (> 50 ký tự thường là văn bản rác)
+    if len(name_part) > 60:
+        return False
+        
+    return True
+
+# --- 3. HÀM TÌM TRÍCH DẪN (NÂNG CẤP V6) ---
+def find_citations_v6(text):
     citations = []
     
-    # --- A. Xử lý dạng trong ngoặc: (Name, Year; Name, Year) ---
-    # Bước 1: Tìm tất cả các cụm trong ngoặc đơn có chứa ít nhất 1 năm (4 số)
-    # Regex này bắt nội dung trong ngoặc (...)
+    # --- Pattern trong ngoặc (...) ---
     parenthetical_pattern = r'\(([^)]*?\d{4}[^)]*?)\)'
     
     for match in re.finditer(parenthetical_pattern, text):
         content = match.group(1)
         
-        # Bước 2: Tách theo dấu chấm phẩy (cho trường hợp trích dẫn gộp)
-        # VD: "Lee & Pradhan, 2007; Crawford et al., 2021" -> Tách làm 2
+        # Tách theo dấu chấm phẩy (đa trích dẫn)
         parts = content.split(';')
         
         for part in parts:
             part = part.strip()
-            # Bước 3: Trong mỗi phần nhỏ, tìm cặp Name - Year
-            # Tìm 4 số cuối cùng làm Năm
+            # Tìm 4 số cuối cùng
             year_match = re.search(r'(\d{4})[a-z]?', part) 
             if year_match:
                 year = year_match.group(1)
-                # Tên là phần đứng trước năm (bỏ dấu phẩy thừa)
-                # VD: "Lee & Pradhan, 2007" -> Name: "Lee & Pradhan"
+                # Lấy phần tên phía trước
                 name_part = part[:year_match.start()].strip().rstrip(',').strip()
                 
-                if len(name_part) > 1: # Tránh rác
+                # CHẠY BỘ LỌC THÔNG MINH
+                if len(name_part) > 1 and is_valid_citation_candidate(name_part, year):
                     citations.append({"name": name_part, "year": year, "full": f"({name_part}, {year})"})
 
-    # --- B. Xử lý dạng mở: Name (Year) ---
-    # VD: Parlov và nnk (2019)
+    # --- Pattern mở: Name (Year) ---
     pattern_open = r'([A-ZÀ-ỹ][A-Za-zÀ-ỹ\s&.]{1,50}?)\s*\(\s*(\d{4})\s*\)'
     for match in re.finditer(pattern_open, text):
         name_raw = match.group(1).strip()
         year = match.group(2)
-        # Loại bỏ các từ nối cuối cùng nếu dính (VD: "ABC et al" -> "ABC")
-        citations.append({"name": name_raw, "year": year, "full": f"{name_raw} ({year})"})
+        
+        # CHẠY BỘ LỌC THÔNG MINH
+        if is_valid_citation_candidate(name_raw, year):
+            citations.append({"name": name_raw, "year": year, "full": f"{name_raw} ({year})"})
 
     # Lọc trùng
     unique_citations = []
@@ -98,53 +136,34 @@ def find_citations_v5(text):
             
     return unique_citations
 
-# --- 3. HÀM SO KHỚP (NÂNG CẤP TỪ ĐIỂN VN) ---
+# --- 4. HÀM SO KHỚP ---
 def check_citation_in_refs(cit_name, cit_year, refs_list):
-    # Chuẩn hóa tên: Xóa tất cả các từ nối nhiễu
-    # Thêm "& cs" (cộng sự), "cs", "và nnk"
+    # Chuẩn hóa tên: Xóa các từ nối
     stopwords_regex = r'(et al\.?|và nnk\.?|và cộng sự|& cs\.?|&|and|,\s*cs)'
-    
     clean_cit_name = re.sub(stopwords_regex, ' ', cit_name, flags=re.IGNORECASE).strip()
-    
-    # Tách tên thành các từ khóa (tokens)
-    # VD: "Trần Văn Tớ" -> ['trần', 'văn', 'tớ']
     cit_tokens = [t.lower() for t in clean_cit_name.split() if len(t) > 1]
     
     for ref in refs_list:
-        # Điều kiện 1: Phải chứa Năm
         if cit_year in ref:
             ref_lower = ref.lower()
-            
-            # Điều kiện 2: Kiểm tra tên (Fuzzy Matching)
-            
-            # Case A: Tên Cite nằm trọn trong Ref (Dành cho tên tiếng Việt đầy đủ)
             if clean_cit_name.lower() in ref_lower:
                 return True
-                
-            # Case B: So khớp từng từ (Dành cho tên nước ngoài hoặc tên viết tắt)
-            # VD: Cite="Hà", Ref="Hà, T. T." -> Khớp token "hà"
             match_token_count = 0
             for token in cit_tokens:
-                # Token phải xuất hiện TRƯỚC phần năm trong Ref (để tránh trùng với tên bài báo)
-                # Tuy nhiên để đơn giản và hiệu quả, ta check trong cả string Ref trước
                 if token in ref_lower:
                     match_token_count += 1
-            
-            # Nếu tên ngắn (1 từ) -> Phải khớp 1 từ
-            # Nếu tên dài (>1 từ) -> Phải khớp ít nhất 1 từ (chấp nhận viết tắt)
             if len(cit_tokens) > 0 and match_token_count >= 1:
                 return True
-                
     return False
 
-# --- 4. GIAO DIỆN ---
+# --- 5. GIAO DIỆN ---
 with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/2921/2921226.png", width=80)
-    st.title("Citation Pro v5")
-    st.write("Phiên bản sửa lỗi trích dẫn gộp (;)")
+    st.title("Citation Pro v6")
+    st.write("🛡️ **Smart Filter:** Tự động loại bỏ ngày tháng, số liệu, phương trình.")
     uploaded_file = st.file_uploader("📂 Tải file báo cáo:", type=['docx', 'pdf'])
 
-st.title("📑 Kiểm tra Tài liệu (Fix dấu ; và & cs)")
+st.title("🛡️ Kiểm tra Tài liệu (Bộ lọc thông minh)")
 
 if uploaded_file:
     if st.button("🚀 Bắt đầu Phân tích", type="primary"):
@@ -172,9 +191,9 @@ if uploaded_file:
                 body_text = full_text[:matches[-1].start()]
                 ref_text = full_text[split_idx:]
             
-            # Xử lý dữ liệu
+            # Xử lý
             ref_lines = [line.strip() for line in ref_text.split('\n') if len(line.strip()) > 10 and re.search(r'\d{4}', line)]
-            citations = find_citations_v5(body_text) # Dùng hàm v5 mới
+            citations = find_citations_v6(body_text) # Dùng hàm v6
 
             # Logic Check
             missing_refs = []
@@ -184,21 +203,16 @@ if uploaded_file:
 
             unused_refs = []
             for ref in ref_lines:
-                # Lấy năm của Ref
                 ref_year_match = re.search(r'\d{4}', ref)
                 if ref_year_match:
                     r_year = ref_year_match.group(0)
-                    
-                    # Tìm xem có Cite nào cùng năm không
                     same_year_cites = [c for c in citations if c['year'] == r_year]
-                    
                     is_found = False
                     if same_year_cites:
                         for c in same_year_cites:
                             if check_citation_in_refs(c['name'], c['year'], [ref]):
                                 is_found = True
                                 break
-                    
                     if not is_found:
                         unused_refs.append(ref)
             
@@ -209,21 +223,24 @@ if uploaded_file:
         c1, c2, c3 = st.columns(3)
         c1.metric("Citation (In-text)", len(citations))
         c2.metric("Reference List", len(ref_lines))
-        
         err_num = len(missing_refs) + len(unused_refs)
-        c3.metric("Số lượng cảnh báo", err_num, delta_color="inverse")
+        c3.metric("Cảnh báo", err_num, delta_color="inverse")
 
         st.divider()
-        t1, t2 = st.tabs(["🔴 THIẾU REF (Missing)", "🟡 THỪA REF (Unused)"])
+        t1, t2, t3 = st.tabs(["🔴 THIẾU REF (Missing)", "🟡 THỪA REF (Unused)", "📋 DANH SÁCH TÌM THẤY"])
         
         with t1:
             if missing_refs:
                 for i in missing_refs: st.error(i)
             else:
-                st.success("Không có trích dẫn nào bị thiếu!")
+                st.success("Tuyệt vời! Không thiếu trích dẫn nào.")
         
         with t2:
             if unused_refs:
                 for i in unused_refs: st.warning(i)
             else:
-                st.success("Danh mục tài liệu hoàn toàn khớp!")
+                st.success("Danh mục tài liệu khớp hoàn toàn.")
+                
+        with t3:
+            st.info("Kiểm tra lại xem máy có bắt nhầm ngày tháng không:")
+            st.write(citations)
