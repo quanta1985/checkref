@@ -6,7 +6,7 @@ from docx import Document
 from pypdf import PdfReader
 from thefuzz import fuzz # Thư viện AI
 
-# --- 1. CẤU HÌNH & CSS (GIỮ NGUYÊN 100%) ---
+# --- 1. CẤU HÌNH & CSS (GIỮ NGUYÊN) ---
 st.set_page_config(
     page_title="Citation Pro | AI Fuzzy Logic",
     page_icon="🎓",
@@ -42,7 +42,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. CÁC HÀM XỬ LÝ (LOGIC ĐÃ NÂNG CẤP v11) ---
+# --- 2. CÁC HÀM XỬ LÝ (LOGIC ĐÃ NÂNG CẤP v11.1) ---
 
 def extract_text_from_docx(file):
     try:
@@ -98,9 +98,8 @@ def is_garbage(text):
         if char in text: return True
     return False
 
-# --- HÀM GIẢI MÃ VIẾT TẮT (MỚI) ---
+# --- HÀM GIẢI MÃ VIẾT TẮT ---
 def expand_abbreviation(name):
-    # Từ điển viết tắt phổ biến trong báo cáo Việt Nam
     abbr_dict = {
         'BỘ TNMT': 'BỘ TÀI NGUYÊN VÀ MÔI TRƯỜNG',
         'BỘ TN&MT': 'BỘ TÀI NGUYÊN VÀ MÔI TRƯỜNG',
@@ -115,40 +114,40 @@ def expand_abbreviation(name):
     name_upper = name.upper()
     for abbr, full in abbr_dict.items():
         if abbr in name_upper:
-            # Nếu tìm thấy viết tắt, trả về tên đầy đủ để so sánh
             return name_upper.replace(abbr, full)
-    return name # Nếu không viết tắt thì trả về nguyên gốc
+    return name
 
-def check_citation_fuzzy(cit_name, cit_year, refs_list, threshold=80):
+def check_citation_fuzzy(cit_name, cit_year, refs_list, threshold=75):
+    # Hạ threshold xuống 75 cho dễ bắt
     if is_legal_or_standard(cit_name): return True
 
-    # 1. CLEANER MẠNH HƠN: Thêm "và cs" vào regex
-    # Bắt: "et al", "và nnk", "và cộng sự", "và cs", "& cs"
     clean_cit = re.sub(r'(et\s*al\.?|và\s*nnk\.?|và\s*cộng\s*sự|và\s*cs\.?|&\s*cs\.?|&|and)', ' ', cit_name, flags=re.IGNORECASE).strip()
-    
     clean_cit = re.sub(r'^(được|bởi|của|theo)\s+', '', clean_cit, flags=re.IGNORECASE).strip()
     
-    # 2. XỬ LÝ VIẾT TẮT (Bộ TNMT -> Bộ Tài nguyên...)
     expanded_cit = expand_abbreviation(clean_cit)
 
     for ref in refs_list:
         if str(cit_year) in ref:
-            # So sánh tên gốc (đã làm sạch)
+            # 1. So khớp Token Set (cho chuỗi bị đảo thứ tự hoặc thiếu từ)
             score1 = fuzz.token_set_ratio(clean_cit, ref)
             
-            # So sánh tên đã giải mã viết tắt (nếu có)
-            score2 = 0
-            if expanded_cit != clean_cit:
-                score2 = fuzz.token_set_ratio(expanded_cit, ref)
+            # 2. So khớp Partial (So khớp một phần - Quan trọng cho case Guiry & Guiry)
+            # Nếu clean_cit nằm trọn vẹn trong ref, điểm sẽ là 100
+            score2 = fuzz.partial_ratio(clean_cit, ref)
             
-            # Lấy điểm cao nhất
-            final_score = max(score1, score2)
+            # 3. So khớp với tên đã giải mã viết tắt
+            score3 = 0
+            if expanded_cit != clean_cit:
+                score3 = fuzz.token_set_ratio(expanded_cit, ref)
+            
+            # Lấy điểm cao nhất trong 3 thuật toán
+            final_score = max(score1, score2, score3)
             
             if final_score >= threshold:
                 return True
     return False
 
-def find_citations_v10(text):
+def find_citations_v11(text):
     citations = []
     
     # Pattern 1: Trong ngoặc (...)
@@ -166,7 +165,8 @@ def find_citations_v10(text):
                         citations.append({"name": name_part, "year": year, "full": f"({name_part}, {year})"})
 
     # Pattern 2: Dạng mở Name (Year)
-    for match in re.finditer(r'([A-ZÀ-ỹ][A-Za-zÀ-ỹ\s&\-]{1,60}?)\s*\(\s*(\d{4})\s*\)', text):
+    # FIX v11.1: Cho phép thêm dấu phẩy ',' trong regex tên để bắt các lỗi ngữ pháp lỏng lẻo
+    for match in re.finditer(r'([A-ZÀ-ỹ][A-Za-zÀ-ỹ\s&\-,]{1,60}?)\s*\(\s*(\d{4})\s*\)', text):
         raw_name = match.group(1).strip()
         year = match.group(2)
         if not is_legal_or_standard(raw_name) and not is_garbage(raw_name):
@@ -185,7 +185,7 @@ def find_citations_v10(text):
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.markdown("<h2 style='text-align: center; color: #0d6efd;'>🎓 Citation Pro <br><span style='font-size:16px; color: #666;'>(AI FUZZY CHECK )</span></h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; color: #0d6efd;'>🎓 Citation Pro <br><span style='font-size:16px; color: #666;'>(AI FUZZY CHECK)</span></h2>", unsafe_allow_html=True)
     st.markdown("---")
     uploaded_file = st.file_uploader("📂 **Tải báo cáo lên đây**:", type=['docx', 'pdf'])
     
@@ -241,7 +241,7 @@ else:
             ref_lines = [line.strip() for line in ref_raw.split('\n') if len(line.strip()) > 10 and re.search(r'\d{4}', line)]
 
             st.write("🧠 Đang chạy thuật toán AI Fuzzy Matching...")
-            citations = find_citations_v10(body_text)
+            citations = find_citations_v11(body_text)
 
             # --- LOGIC CHECK (FUZZY) ---
             missing_refs = []
