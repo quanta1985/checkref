@@ -42,7 +42,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. CÁC HÀM XỬ LÝ (LOGIC v12.2 - Data Cleaner) ---
+# --- 2. CÁC HÀM XỬ LÝ (LOGIC v13.0 - Smart Merge) ---
 
 def extract_text_from_docx(file):
     try:
@@ -70,6 +70,41 @@ def preprocess_text(text):
     text = re.sub(r'\s+', ' ', text)
     return text
 
+# === HÀM MỚI: PHÂN TÍCH VÀ NỐI DÒNG DANH MỤC ===
+def parse_references(text):
+    """
+    Hàm thông minh để phát hiện danh mục có đánh số (1. 2. 3...)
+    và tự động nối các dòng bị ngắt giữa chừng.
+    """
+    lines = [l.strip() for l in text.split('\n') if l.strip()]
+    if not lines: return []
+    
+    # 1. Kiểm tra xem danh mục có phải kiểu đánh số không?
+    # Đếm số dòng bắt đầu bằng số (VD: "1.", "11.", "[1]")
+    num_starts = sum(1 for l in lines[:30] if re.match(r'^\[?\d+\]?[\.\)]', l))
+    is_numbered = num_starts > 2 # Nếu có trên 2 dòng có số -> Coi là danh mục đánh số
+    
+    merged_refs = []
+    current_ref = ""
+    
+    for line in lines:
+        if is_numbered:
+            # Nếu là dòng bắt đầu bằng số -> Đây là Ref mới
+            if re.match(r'^\[?\d+\]?[\.\)]', line):
+                if current_ref: merged_refs.append(current_ref)
+                current_ref = line
+            else:
+                # Nếu không bắt đầu bằng số -> Nó là phần đuôi của Ref trước
+                current_ref += " " + line
+        else:
+            # Nếu không đánh số -> Giữ nguyên từng dòng (như cũ)
+            merged_refs.append(line)
+            
+    if is_numbered and current_ref: merged_refs.append(current_ref)
+    
+    # Nếu không phải đánh số, trả về list gốc. Nếu có đánh số, trả về list đã nối.
+    return merged_refs if is_numbered else lines
+
 def is_legal_or_standard(text):
     text_lower = text.lower()
     keywords = [
@@ -84,13 +119,12 @@ def is_legal_or_standard(text):
 
 def is_garbage(text):
     text_lower = text.lower()
-    # Cập nhật danh sách từ khóa rác (data keywords)
     blacklist = [
         'tháng', 'ngày', 'năm', 'lúc', 'trước', 'sau', 'khoảng', 'hình', 'bảng', 'biểu', 
         'sơ đồ', 'phương trình', 'công thức', 'hệ số', 'giá trị', 'tỉ lệ', 'kết quả', 
         'đoạn', 'phần', 'mục', 'bản đồ', 'giai đoạn', 'số', 'nghiên cứu', 'phân tích', 
         'đánh giá', 'đối với', 'của', 'bởi', 'được', 'trong', 'tại', 
-        'tương đương', 'tương đương với', 'dao động', 'đến', 'từ' # <--- Thêm từ khóa mới
+        'tương đương', 'dao động', 'đến', 'từ'
     ]
     for word in blacklist:
         if re.search(r'\b' + re.escape(word) + r'\b', text_lower):
@@ -131,8 +165,8 @@ def check_citation_fuzzy(cit_name, cit_year, refs_list, threshold=65):
 
     for ref in refs_list:
         if str(cit_year) in ref:
-            # 1. Prefix Check
-            clean_ref_start = re.sub(r'^\s*(\[?\d+\]?\.?)\s+', '', ref, count=1)
+            # 1. Prefix Check (Bỏ số thứ tự đầu dòng nếu có để so sánh tên)
+            clean_ref_start = re.sub(r'^\s*(\[?\d+\]?[\.\)])\s+', '', ref, count=1)
             if clean_ref_start.lower().startswith(clean_cit.lower()):
                 return True
             
@@ -166,12 +200,7 @@ def find_citations_v12(text):
                 year = year_match.group(1)
                 name_part = part[:year_match.start()].strip().rstrip(',:').strip()
                 
-                # === NEW FIX v12.2: Tên tác giả KHÔNG ĐƯỢC chứa số ===
-                # Nếu name_part chứa bất kỳ chữ số nào (0-9) -> Skip ngay lập tức
-                # VD: "tương đương với 560,79" -> Có số -> Loại
-                if re.search(r'\d', name_part):
-                    continue
-                # ====================================================
+                if re.search(r'\d', name_part): continue
 
                 if len(name_part) > 1 and len(name_part) < 100 and not is_legal_or_standard(name_part):
                      if not is_garbage(name_part):
@@ -181,10 +210,7 @@ def find_citations_v12(text):
     for match in re.finditer(r'([A-ZÀ-ỹ][A-Za-zÀ-ỹ\s&\-,]{1,60}?)\s*\(\s*(\d{4})\s*\)', text):
         raw_name = match.group(1).strip()
         year = match.group(2)
-        
-        # Áp dụng logic tương tự: Tên không được chứa số
         if re.search(r'\d', raw_name): continue
-
         if not is_legal_or_standard(raw_name) and not is_garbage(raw_name):
              citations.append({"name": raw_name, "year": year, "full": f"{raw_name} ({year})"})
 
@@ -254,7 +280,11 @@ else:
                 ref_raw = raw_text[split_idx:]
             
             body_text = preprocess_text(body_raw)
-            ref_lines = [line.strip() for line in ref_raw.split('\n') if len(line.strip()) > 10 and re.search(r'\d{4}', line)]
+            
+            # --- DÙNG HÀM PARSE MỚI (V13) ĐỂ XỬ LÝ DANH MỤC ---
+            all_ref_lines = parse_references(ref_raw)
+            # Lọc lại lần cuối để chắc chắn chỉ lấy dòng có Năm
+            ref_lines = [line for line in all_ref_lines if re.search(r'\d{4}', line)]
 
             st.write("🧠 Đang chạy thuật toán AI Fuzzy Matching...")
             citations = find_citations_v12(body_text)
@@ -291,7 +321,7 @@ else:
     
     st.markdown("""
     <div style="background-color: #ffe6e6; border: 1px solid #ffcccc; padding: 10px; border-radius: 5px; color: #cc0000; margin-bottom: 15px; font-size: 14px;">
-        <b>⚠️ LƯU Ý:</b> Những trích dẫn bị xuống dòng trong bản thảo (ví dụ <i>Rasmussen</i> thành <i>Ras-mussen</i>) có thể bị báo lỗi thiếu trích dẫn do hạn chế của việc trích xuất văn bản PDF. Ngoài ra các cụm từ viết tắt và đặt trong ngoặc có thể bị hiểu sai. Vui lòng kiểm tra lại thủ công.
+        <b>⚠️ LƯU Ý:</b> Những trích dẫn bị xuống dòng trong bản thảo (ví dụ <i>Rasmussen</i> thành <i>Ras-mussen</i>) có thể bị báo lỗi thiếu trích dẫn do hạn chế của việc trích xuất văn bản PDF. Vui lòng kiểm tra lại thủ công.
     </div>
     """, unsafe_allow_html=True)
     
