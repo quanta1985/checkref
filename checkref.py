@@ -321,7 +321,7 @@ else:
     
     st.markdown("""
     <div style="background-color: #ffe6e6; border: 1px solid #ffcccc; padding: 10px; border-radius: 5px; color: #cc0000; margin-bottom: 15px; font-size: 14px;">
-        <b>⚠️ LƯU Ý:</b> Những trích dẫn bị xuống dòng trong bản thảo (ví dụ <i>Rasmussen</i> thành <i>Ras-mussen</i>) có thể bị báo lỗi thiếu trích dẫn do hạn chế của việc trích xuất văn bản PDF. Vui lòng kiểm tra lại thủ công.
+        <b>⚠️ LƯU Ý:</b> Những trích dẫn bị xuống dòng trong bản thảo (ví dụ <i>Rasmussen</i> thành <i>Ras-mussen</i>) có thể bị báo lỗi thiếu trích dẫn, những tài có số tác giả quá dài và không theo các định dạng chuẩn như APA, MLA cũng sẽ dễ báo lỗi trích dẫn thừa. Vui lòng kiểm tra lại thủ công.
     </div>
     """, unsafe_allow_html=True)
     
