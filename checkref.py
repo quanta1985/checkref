@@ -182,7 +182,7 @@ with st.sidebar:
         """)
     
     st.info("⚠️ **Lưu ý:** App đang trong quá trình phát triển (Beta). Kết quả kiểm tra chỉ mang tính chất tham khảo nhanh.")
-    st.caption("Dev by Quan HUMG")
+    st.caption("Dev by Trần Anh Quân - HUMG")
 
 # --- MAIN PAGE ---
 if not uploaded_file:
