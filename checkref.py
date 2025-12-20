@@ -176,7 +176,7 @@ def find_citations_v9(text):
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.markdown("<h2 style='text-align: center; color: #0d6efd;'>🎓 Citation Pro <br><span style='font-size:16px; color: #666;'>(AI fuzzy logic)</span></h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center; color: #0d6efd;'>🎓 Citation Pro <br><span style='font-size:16px; color: #666;'>(AI FUZZY CHECK )</span></h2>", unsafe_allow_html=True)
     st.markdown("---")
     uploaded_file = st.file_uploader("📂 **Tải báo cáo lên đây**:", type=['docx', 'pdf'])
     
@@ -196,7 +196,7 @@ if not uploaded_file:
     # Màn hình chờ
     st.markdown("<div style='text-align: center; padding: 50px;'>", unsafe_allow_html=True)
     st.title("Công cụ Rà soát Trích dẫn & Tài liệu tham khảo")
-    st.markdown("### 🚀 Nhanh chóng - Chính xác - Chuyên nghiệp")
+    st.markdown("### 🚀 Nhanh chóng - (Gần) Chính xác - (Sắp) Chuyên nghiệp - Và JUST FOR FUN 😎")
     st.markdown("Kiểm tra sự đồng bộ giữa *Trích dẫn trong bài (In-text)* và *Danh mục tham khảo (References)*.")
     st.image("https://cdn-icons-png.flaticon.com/512/8662/8662266.png", width=150)
     st.info("👈 Vui lòng tải file báo cáo ở thanh bên trái để bắt đầu.")
