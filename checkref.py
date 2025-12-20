@@ -8,7 +8,7 @@ from thefuzz import fuzz # Thư viện AI
 
 # --- 1. CẤU HÌNH & CSS (GIỮ NGUYÊN) ---
 st.set_page_config(
-    page_title="Citation Pro | AI Fuzzy Check",
+    page_title="Citation Pro | AI Fuzzy Logic",
     page_icon="🎓",
     layout="wide",
     initial_sidebar_state="expanded"
