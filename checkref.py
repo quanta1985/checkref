@@ -42,7 +42,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. CÁC HÀM XỬ LÝ (LOGIC ĐÃ NÂNG CẤP v10) ---
+# --- 2. CÁC HÀM XỬ LÝ (LOGIC ĐÃ NÂNG CẤP v11) ---
 
 def extract_text_from_docx(file):
     try:
@@ -65,7 +65,6 @@ def extract_text_from_pdf(file):
     except: return "ERROR_PDF"
 
 def preprocess_text(text):
-    # Nối từ bị ngắt dòng và làm sạch
     text = re.sub(r'-\s*\n\s*', '', text)
     text = text.replace('\n', ' ').replace('\r', ' ')
     text = re.sub(r'\s+', ' ', text)
@@ -83,53 +82,76 @@ def is_legal_or_standard(text):
         if kw in text_lower: return True
     return False
 
-# --- HÀM CHECK TỪ KHÓA RÁC (BLACKLIST) ---
 def is_garbage(text):
     text_lower = text.lower()
-    # Danh sách từ khóa cấm xuất hiện trong Tên Tác Giả
     blacklist = [
         'tháng', 'ngày', 'năm', 'lúc', 'trước', 'sau', 'khoảng', 'hình', 'bảng', 'biểu', 
         'sơ đồ', 'phương trình', 'công thức', 'hệ số', 'giá trị', 'tỉ lệ', 'kết quả', 
         'đoạn', 'phần', 'mục', 'bản đồ', 'giai đoạn', 'số', 'nghiên cứu', 'phân tích', 
         'đánh giá', 'đối với', 'của', 'bởi', 'được', 'trong', 'tại'
     ]
-    
-    # Check 1: Chứa từ khóa cấm
     for word in blacklist:
-        # Dùng regex để bắt chính xác từ (tránh bắt nhầm chữ 'thắng' chứa 'tháng')
         if re.search(r'\b' + re.escape(word) + r'\b', text_lower):
             return True
-            
-    # Check 2: Chứa ký tự toán học
     invalid_chars = ['/', '=', '>', '<', '%', '+', '\\']
     for char in invalid_chars:
         if char in text: return True
-        
     return False
+
+# --- HÀM GIẢI MÃ VIẾT TẮT (MỚI) ---
+def expand_abbreviation(name):
+    # Từ điển viết tắt phổ biến trong báo cáo Việt Nam
+    abbr_dict = {
+        'BỘ TNMT': 'BỘ TÀI NGUYÊN VÀ MÔI TRƯỜNG',
+        'BỘ TN&MT': 'BỘ TÀI NGUYÊN VÀ MÔI TRƯỜNG',
+        'BỘ KHCN': 'BỘ KHOA HỌC VÀ CÔNG NGHỆ',
+        'BỘ NNPTNT': 'BỘ NÔNG NGHIỆP VÀ PHÁT TRIỂN NÔNG THÔN',
+        'BỘ XD': 'BỘ XÂY DỰNG',
+        'UBND': 'ỦY BAN NHÂN DÂN',
+        'CP': 'CHÍNH PHỦ',
+        'QH': 'QUỐC HỘI'
+    }
+    
+    name_upper = name.upper()
+    for abbr, full in abbr_dict.items():
+        if abbr in name_upper:
+            # Nếu tìm thấy viết tắt, trả về tên đầy đủ để so sánh
+            return name_upper.replace(abbr, full)
+    return name # Nếu không viết tắt thì trả về nguyên gốc
 
 def check_citation_fuzzy(cit_name, cit_year, refs_list, threshold=80):
     if is_legal_or_standard(cit_name): return True
 
-    # CLEANER MẠNH HƠN: Xử lý bất chấp các kiểu viết tắt, thừa dấu cách
-    # Regex này bắt: "et al", "et. al", "và cộng sự", "và  cộng sự", "& cs", "&cs"
-    clean_cit = re.sub(r'(et\s*al\.?|và\s*nnk\.?|và\s*cộng\s*sự|&\s*cs\.?|&|and)', ' ', cit_name, flags=re.IGNORECASE).strip()
+    # 1. CLEANER MẠNH HƠN: Thêm "và cs" vào regex
+    # Bắt: "et al", "và nnk", "và cộng sự", "và cs", "& cs"
+    clean_cit = re.sub(r'(et\s*al\.?|và\s*nnk\.?|và\s*cộng\s*sự|và\s*cs\.?|&\s*cs\.?|&|and)', ' ', cit_name, flags=re.IGNORECASE).strip()
     
-    # Loại bỏ các từ nối thừa ở đầu câu (nếu lỡ bị dính)
     clean_cit = re.sub(r'^(được|bởi|của|theo)\s+', '', clean_cit, flags=re.IGNORECASE).strip()
     
+    # 2. XỬ LÝ VIẾT TẮT (Bộ TNMT -> Bộ Tài nguyên...)
+    expanded_cit = expand_abbreviation(clean_cit)
+
     for ref in refs_list:
         if str(cit_year) in ref:
-            # Dùng token_set_ratio: Cực tốt cho việc so sánh chuỗi con
-            # VD: "Hobbins" so với "Hobbins, M. et al." -> Score 100
-            score = fuzz.token_set_ratio(clean_cit, ref)
-            if score >= threshold:
+            # So sánh tên gốc (đã làm sạch)
+            score1 = fuzz.token_set_ratio(clean_cit, ref)
+            
+            # So sánh tên đã giải mã viết tắt (nếu có)
+            score2 = 0
+            if expanded_cit != clean_cit:
+                score2 = fuzz.token_set_ratio(expanded_cit, ref)
+            
+            # Lấy điểm cao nhất
+            final_score = max(score1, score2)
+            
+            if final_score >= threshold:
                 return True
     return False
 
 def find_citations_v10(text):
     citations = []
     
-    # --- Pattern 1: Trong ngoặc (...) ---
+    # Pattern 1: Trong ngoặc (...)
     for match in re.finditer(r'\(([^)]*?\d{4}[^)]*?)\)', text):
         content = match.group(1)
         for part in content.split(';'):
@@ -139,23 +161,17 @@ def find_citations_v10(text):
                 year = year_match.group(1)
                 name_part = part[:year_match.start()].strip().rstrip(',:').strip()
                 
-                # Áp dụng bộ lọc
                 if len(name_part) > 1 and len(name_part) < 100 and not is_legal_or_standard(name_part):
                      if not is_garbage(name_part):
                         citations.append({"name": name_part, "year": year, "full": f"({name_part}, {year})"})
 
-    # --- Pattern 2: Dạng mở Name (Year) ---
-    # FIX QUAN TRỌNG: Loại bỏ dấu chấm '.' khỏi regex tên tác giả để tránh ăn lan sang câu trước
-    # Cũ: [A-Za-zÀ-ỹ\s&.\-] -> Mới: [A-Za-zÀ-ỹ\s&\-] (Bỏ dấu chấm)
+    # Pattern 2: Dạng mở Name (Year)
     for match in re.finditer(r'([A-ZÀ-ỹ][A-Za-zÀ-ỹ\s&\-]{1,60}?)\s*\(\s*(\d{4})\s*\)', text):
         raw_name = match.group(1).strip()
         year = match.group(2)
-        
-        # Áp dụng bộ lọc
         if not is_legal_or_standard(raw_name) and not is_garbage(raw_name):
              citations.append({"name": raw_name, "year": year, "full": f"{raw_name} ({year})"})
 
-    # Unique
     unique_citations = []
     seen = set()
     for c in citations:
@@ -182,7 +198,7 @@ with st.sidebar:
         """)
     
     st.info("⚠️ **Lưu ý:** App đang trong quá trình phát triển (Beta). Kết quả kiểm tra chỉ mang tính chất tham khảo nhanh.")
-    st.caption("Dev by Trần Anh Quân - HUMG")
+    st.caption("Dev by Quan HUMG")
 
 # --- MAIN PAGE ---
 if not uploaded_file:
