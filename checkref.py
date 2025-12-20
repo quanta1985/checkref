@@ -42,7 +42,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. CÁC HÀM XỬ LÝ (LOGIC v12.1 - Smart Author Isolation) ---
+# --- 2. CÁC HÀM XỬ LÝ (LOGIC v12.2 - Data Cleaner) ---
 
 def extract_text_from_docx(file):
     try:
@@ -84,18 +84,22 @@ def is_legal_or_standard(text):
 
 def is_garbage(text):
     text_lower = text.lower()
+    # Cập nhật danh sách từ khóa rác (data keywords)
     blacklist = [
         'tháng', 'ngày', 'năm', 'lúc', 'trước', 'sau', 'khoảng', 'hình', 'bảng', 'biểu', 
         'sơ đồ', 'phương trình', 'công thức', 'hệ số', 'giá trị', 'tỉ lệ', 'kết quả', 
         'đoạn', 'phần', 'mục', 'bản đồ', 'giai đoạn', 'số', 'nghiên cứu', 'phân tích', 
-        'đánh giá', 'đối với', 'của', 'bởi', 'được', 'trong', 'tại'
+        'đánh giá', 'đối với', 'của', 'bởi', 'được', 'trong', 'tại', 
+        'tương đương', 'dao động', 'đến', 'từ' # <--- Thêm từ khóa mới
     ]
     for word in blacklist:
         if re.search(r'\b' + re.escape(word) + r'\b', text_lower):
             return True
+    
     invalid_chars = ['/', '=', '>', '<', '%', '+', '\\']
     for char in invalid_chars:
         if char in text: return True
+        
     return False
 
 def expand_abbreviation(name):
@@ -127,23 +131,19 @@ def check_citation_fuzzy(cit_name, cit_year, refs_list, threshold=65):
 
     for ref in refs_list:
         if str(cit_year) in ref:
-            # === LOGIC 1: PREFIX CHECK (Bắt đầu bằng...) ===
+            # 1. Prefix Check
             clean_ref_start = re.sub(r'^\s*(\[?\d+\]?\.?)\s+', '', ref, count=1)
             if clean_ref_start.lower().startswith(clean_cit.lower()):
                 return True
             
-            # === LOGIC 2: SO SÁNH RIÊNG PHẦN TÁC GIẢ (CÔ LẬP TÁC GIẢ) ===
-            # Tìm vị trí năm xuất hiện trong Ref để cắt phần trước đó
-            # Ref: "Guiry, M.D. & Guiry, G.M., 2010. AlgaeBase..." -> Cắt lấy "Guiry, M.D. & Guiry, G.M.,"
+            # 2. Author Isolation
             match_year = re.search(str(cit_year), ref)
             if match_year:
                 author_part_only = ref[:match_year.start()]
-                # So sánh tên Cit với phần Tác giả cô lập này -> Chính xác hơn nhiều
                 score_author = fuzz.token_set_ratio(clean_cit, author_part_only)
-                if score_author >= threshold: 
-                    return True
+                if score_author >= threshold: return True
 
-            # === LOGIC 3: SO SÁNH FULL STRING (BACKUP) ===
+            # 3. Full String Backup
             score1 = fuzz.token_set_ratio(clean_cit, ref)
             score2 = 0
             if expanded_cit != clean_cit:
@@ -153,7 +153,7 @@ def check_citation_fuzzy(cit_name, cit_year, refs_list, threshold=65):
                 return True
     return False
 
-def find_citations_v10(text):
+def find_citations_v12(text):
     citations = []
     
     # Pattern 1: Trong ngoặc (...)
@@ -166,14 +166,25 @@ def find_citations_v10(text):
                 year = year_match.group(1)
                 name_part = part[:year_match.start()].strip().rstrip(',:').strip()
                 
+                # === NEW FIX v12.2: Tên tác giả KHÔNG ĐƯỢC chứa số ===
+                # Nếu name_part chứa bất kỳ chữ số nào (0-9) -> Skip ngay lập tức
+                # VD: "tương đương với 560,79" -> Có số -> Loại
+                if re.search(r'\d', name_part):
+                    continue
+                # ====================================================
+
                 if len(name_part) > 1 and len(name_part) < 100 and not is_legal_or_standard(name_part):
                      if not is_garbage(name_part):
                         citations.append({"name": name_part, "year": year, "full": f"({name_part}, {year})"})
 
     # Pattern 2: Dạng mở Name (Year)
-    for match in re.finditer(r'([A-ZÀ-ỹ][A-Za-zÀ-ỹ\s&\-]{1,60}?)\s*\(\s*(\d{4})\s*\)', text):
+    for match in re.finditer(r'([A-ZÀ-ỹ][A-Za-zÀ-ỹ\s&\-,]{1,60}?)\s*\(\s*(\d{4})\s*\)', text):
         raw_name = match.group(1).strip()
         year = match.group(2)
+        
+        # Áp dụng logic tương tự: Tên không được chứa số
+        if re.search(r'\d', raw_name): continue
+
         if not is_legal_or_standard(raw_name) and not is_garbage(raw_name):
              citations.append({"name": raw_name, "year": year, "full": f"{raw_name} ({year})"})
 
@@ -246,7 +257,7 @@ else:
             ref_lines = [line.strip() for line in ref_raw.split('\n') if len(line.strip()) > 10 and re.search(r'\d{4}', line)]
 
             st.write("🧠 Đang chạy thuật toán AI Fuzzy Matching...")
-            citations = find_citations_v10(body_text)
+            citations = find_citations_v12(body_text)
 
             # --- LOGIC CHECK (FUZZY) ---
             missing_refs = []
