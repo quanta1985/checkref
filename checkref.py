@@ -6,7 +6,7 @@ from docx import Document
 from pypdf import PdfReader
 from thefuzz import fuzz # Thư viện AI
 
-# --- 1. CẤU HÌNH & CSS (GIAO DIỆN V7 CHUẨN) ---
+# --- 1. CẤU HÌNH & CSS (GIỮ NGUYÊN) ---
 st.set_page_config(
     page_title="Citation Pro | AI Fuzzy Check",
     page_icon="🎓",
@@ -86,7 +86,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. CÁC HÀM XỬ LÝ (LOGIC AI MỚI NHẤT) ---
+# --- 2. CÁC HÀM XỬ LÝ (LOGIC AI) ---
 
 def extract_text_from_docx(file):
     try:
@@ -128,14 +128,13 @@ def is_legal_or_standard(text):
     return False
 
 def check_citation_fuzzy(cit_name, cit_year, refs_list, threshold=80):
-    # threshold=80: Độ giống nhau 80% là chấp nhận (giảm xuống để bắt lỗi tốt hơn)
     if is_legal_or_standard(cit_name): return True
 
     clean_cit = re.sub(r'(et al\.?|và nnk\.?|và cộng sự|& cs\.?|&|and)', ' ', cit_name, flags=re.IGNORECASE).strip()
     
     for ref in refs_list:
         if str(cit_year) in ref:
-            # Dùng token_set_ratio của FuzzyWuzzy để so sánh thông minh
+            # Dùng token_set_ratio của FuzzyWuzzy
             score = fuzz.token_set_ratio(clean_cit, ref)
             if score >= threshold:
                 return True
@@ -173,7 +172,7 @@ def find_citations_v9(text):
             seen.add(key)
     return unique_citations
 
-# --- 3. GIAO DIỆN CHÍNH (LAYOUT V7 CŨ) ---
+# --- 3. GIAO DIỆN CHÍNH ---
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -221,7 +220,6 @@ else:
                 st.stop()
 
             st.write("🔍 Đang tách danh mục và trích dẫn...")
-            # Tách Ref trước khi preprocess để tránh lẫn lộn
             matches = list(re.finditer(r"(tài liệu tham khảo|references)", raw_text, re.IGNORECASE))
             if not matches:
                 ref_raw = raw_text
@@ -234,7 +232,6 @@ else:
             
             # Preprocess (Nối từ, xóa xuống dòng)
             body_text = preprocess_text(body_raw)
-            # Ref list: Tách dòng dựa trên ký tự xuống dòng gốc, nhưng clean từng dòng
             ref_lines = [line.strip() for line in ref_raw.split('\n') if len(line.strip()) > 10 and re.search(r'\d{4}', line)]
 
             st.write("🧠 Đang chạy thuật toán AI Fuzzy Matching...")
@@ -266,9 +263,18 @@ else:
             
             status.update(label="✅ Đã phân tích xong!", state="complete", expanded=False)
 
-    # --- DASHBOARD KẾT QUẢ (GIỮ NGUYÊN GIAO DIỆN CŨ) ---
+    # --- DASHBOARD KẾT QUẢ ---
     
     st.markdown("<h3 style='margin-top: 20px;'>📊 Tổng quan (Dashboard)</h3>", unsafe_allow_html=True)
+    
+    # === MỤC LƯU Ý MỚI THÊM VÀO ĐÂY ===
+    st.markdown("""
+    <div style="background-color: #ffe6e6; border: 1px solid #ffcccc; padding: 10px; border-radius: 5px; color: #cc0000; margin-bottom: 15px; font-size: 14px;">
+        <b>⚠️ LƯU Ý:</b> Những trích dẫn bị xuống dòng trong bản thảo (ví dụ <i>Rasmussen</i> thành <i>Ras-mussen</i>) có thể bị báo lỗi thiếu trích dẫn do hạn chế của việc trích xuất văn bản PDF. Vui lòng kiểm tra lại thủ công.
+    </div>
+    """, unsafe_allow_html=True)
+    # ==================================
+
     st.markdown('<p class="beta-note">(*) Kết quả dựa trên AI Fuzzy Logic. Vui lòng kiểm tra lại thủ công các mục báo lỗi.</p>', unsafe_allow_html=True)
     
     # Metrics
