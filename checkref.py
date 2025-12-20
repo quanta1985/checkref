@@ -6,7 +6,7 @@ from docx import Document
 from pypdf import PdfReader
 from thefuzz import fuzz # Thư viện AI
 
-# --- 1. CẤU HÌNH & CSS (GIỮ NGUYÊN) ---
+# --- 1. CẤU HÌNH & CSS (GIỮ NGUYÊN 100%) ---
 st.set_page_config(
     page_title="Citation Pro | AI Fuzzy Logic",
     page_icon="🎓",
@@ -17,76 +17,32 @@ st.set_page_config(
 st.markdown("""
 <style>
     /* Font và màu nền tổng thể */
-    .stApp {
-        background-color: #f8f9fa;
-    }
+    .stApp { background-color: #f8f9fa; }
     
     /* Style cho các Card (Khối) */
     .css-card {
-        border-radius: 15px;
-        padding: 20px;
-        background-color: white;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        margin-bottom: 20px;
-        border: 1px solid #e9ecef;
+        border-radius: 15px; padding: 20px; background-color: white;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; border: 1px solid #e9ecef;
     }
     
     /* Header chính */
-    .main-header {
-        font-family: 'Helvetica Neue', sans-serif;
-        color: #0d6efd;
-        text-align: center;
-        margin-bottom: 30px;
-    }
+    .main-header { font-family: 'Helvetica Neue', sans-serif; color: #0d6efd; text-align: center; margin-bottom: 30px; }
     
-    /* Metric Box (Ô số liệu) */
+    /* Metric Box */
     div[data-testid="stMetric"] {
-        background-color: #ffffff;
-        border: 1px solid #e0e0e0;
-        padding: 15px;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        text-align: center;
+        background-color: #ffffff; border: 1px solid #e0e0e0; padding: 15px;
+        border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); text-align: center;
     }
     
-    /* Alert Boxes tùy chỉnh */
-    .alert-error {
-        padding: 12px;
-        border-radius: 8px;
-        background-color: #fff5f5;
-        border-left: 5px solid #fc8181;
-        color: #c53030;
-        margin-bottom: 10px;
-        font-size: 15px;
-    }
-    .alert-warning {
-        padding: 12px;
-        border-radius: 8px;
-        background-color: #fffaf0;
-        border-left: 5px solid #f6ad55;
-        color: #c05621;
-        margin-bottom: 10px;
-        font-size: 15px;
-    }
-    .alert-success {
-        padding: 12px;
-        border-radius: 8px;
-        background-color: #f0fff4;
-        border-left: 5px solid #48bb78;
-        color: #2f855a;
-        font-weight: bold;
-    }
-    .beta-note {
-        font-size: 13px;
-        color: #6c757d;
-        font-style: italic;
-        text-align: center;
-        margin-bottom: 20px;
-    }
+    /* Alert Boxes */
+    .alert-error { padding: 12px; border-radius: 8px; background-color: #fff5f5; border-left: 5px solid #fc8181; color: #c53030; margin-bottom: 10px; font-size: 15px; }
+    .alert-warning { padding: 12px; border-radius: 8px; background-color: #fffaf0; border-left: 5px solid #f6ad55; color: #c05621; margin-bottom: 10px; font-size: 15px; }
+    .alert-success { padding: 12px; border-radius: 8px; background-color: #f0fff4; border-left: 5px solid #48bb78; color: #2f855a; font-weight: bold; }
+    .beta-note { font-size: 13px; color: #6c757d; font-style: italic; text-align: center; margin-bottom: 20px; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. CÁC HÀM XỬ LÝ (LOGIC AI) ---
+# --- 2. CÁC HÀM XỬ LÝ (LOGIC ĐÃ NÂNG CẤP v10) ---
 
 def extract_text_from_docx(file):
     try:
@@ -127,22 +83,53 @@ def is_legal_or_standard(text):
         if kw in text_lower: return True
     return False
 
+# --- HÀM CHECK TỪ KHÓA RÁC (BLACKLIST) ---
+def is_garbage(text):
+    text_lower = text.lower()
+    # Danh sách từ khóa cấm xuất hiện trong Tên Tác Giả
+    blacklist = [
+        'tháng', 'ngày', 'năm', 'lúc', 'trước', 'sau', 'khoảng', 'hình', 'bảng', 'biểu', 
+        'sơ đồ', 'phương trình', 'công thức', 'hệ số', 'giá trị', 'tỉ lệ', 'kết quả', 
+        'đoạn', 'phần', 'mục', 'bản đồ', 'giai đoạn', 'số', 'nghiên cứu', 'phân tích', 
+        'đánh giá', 'đối với', 'của', 'bởi', 'được', 'trong', 'tại'
+    ]
+    
+    # Check 1: Chứa từ khóa cấm
+    for word in blacklist:
+        # Dùng regex để bắt chính xác từ (tránh bắt nhầm chữ 'thắng' chứa 'tháng')
+        if re.search(r'\b' + re.escape(word) + r'\b', text_lower):
+            return True
+            
+    # Check 2: Chứa ký tự toán học
+    invalid_chars = ['/', '=', '>', '<', '%', '+', '\\']
+    for char in invalid_chars:
+        if char in text: return True
+        
+    return False
+
 def check_citation_fuzzy(cit_name, cit_year, refs_list, threshold=80):
     if is_legal_or_standard(cit_name): return True
 
-    clean_cit = re.sub(r'(et al\.?|và nnk\.?|và cộng sự|& cs\.?|&|and)', ' ', cit_name, flags=re.IGNORECASE).strip()
+    # CLEANER MẠNH HƠN: Xử lý bất chấp các kiểu viết tắt, thừa dấu cách
+    # Regex này bắt: "et al", "et. al", "và cộng sự", "và  cộng sự", "& cs", "&cs"
+    clean_cit = re.sub(r'(et\s*al\.?|và\s*nnk\.?|và\s*cộng\s*sự|&\s*cs\.?|&|and)', ' ', cit_name, flags=re.IGNORECASE).strip()
+    
+    # Loại bỏ các từ nối thừa ở đầu câu (nếu lỡ bị dính)
+    clean_cit = re.sub(r'^(được|bởi|của|theo)\s+', '', clean_cit, flags=re.IGNORECASE).strip()
     
     for ref in refs_list:
         if str(cit_year) in ref:
-            # Dùng token_set_ratio của FuzzyWuzzy
+            # Dùng token_set_ratio: Cực tốt cho việc so sánh chuỗi con
+            # VD: "Hobbins" so với "Hobbins, M. et al." -> Score 100
             score = fuzz.token_set_ratio(clean_cit, ref)
             if score >= threshold:
                 return True
     return False
 
-def find_citations_v9(text):
+def find_citations_v10(text):
     citations = []
-    # Pattern 1: (...)
+    
+    # --- Pattern 1: Trong ngoặc (...) ---
     for match in re.finditer(r'\(([^)]*?\d{4}[^)]*?)\)', text):
         content = match.group(1)
         for part in content.split(';'):
@@ -151,15 +138,21 @@ def find_citations_v9(text):
             if year_match:
                 year = year_match.group(1)
                 name_part = part[:year_match.start()].strip().rstrip(',:').strip()
+                
+                # Áp dụng bộ lọc
                 if len(name_part) > 1 and len(name_part) < 100 and not is_legal_or_standard(name_part):
-                     if not re.search(r'(tháng|ngày|trước|sau|hình|bảng)', name_part.lower()):
+                     if not is_garbage(name_part):
                         citations.append({"name": name_part, "year": year, "full": f"({name_part}, {year})"})
 
-    # Pattern 2: Name (Year)
-    for match in re.finditer(r'([A-ZÀ-ỹ][A-Za-zÀ-ỹ\s&.\-]{1,60}?)\s*\(\s*(\d{4})\s*\)', text):
+    # --- Pattern 2: Dạng mở Name (Year) ---
+    # FIX QUAN TRỌNG: Loại bỏ dấu chấm '.' khỏi regex tên tác giả để tránh ăn lan sang câu trước
+    # Cũ: [A-Za-zÀ-ỹ\s&.\-] -> Mới: [A-Za-zÀ-ỹ\s&\-] (Bỏ dấu chấm)
+    for match in re.finditer(r'([A-ZÀ-ỹ][A-Za-zÀ-ỹ\s&\-]{1,60}?)\s*\(\s*(\d{4})\s*\)', text):
         raw_name = match.group(1).strip()
         year = match.group(2)
-        if not is_legal_or_standard(raw_name) and not re.search(r'(tháng|ngày|trước|sau|hình|bảng)', raw_name.lower()):
+        
+        # Áp dụng bộ lọc
+        if not is_legal_or_standard(raw_name) and not is_garbage(raw_name):
              citations.append({"name": raw_name, "year": year, "full": f"{raw_name} ({year})"})
 
     # Unique
@@ -172,7 +165,7 @@ def find_citations_v9(text):
             seen.add(key)
     return unique_citations
 
-# --- 3. GIAO DIỆN CHÍNH ---
+# --- 3. GIAO DIỆN CHÍNH (GIỮ NGUYÊN) ---
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -193,7 +186,6 @@ with st.sidebar:
 
 # --- MAIN PAGE ---
 if not uploaded_file:
-    # Màn hình chờ
     st.markdown("<div style='text-align: center; padding: 50px;'>", unsafe_allow_html=True)
     st.title("Công cụ Rà soát Trích dẫn & Tài liệu tham khảo")
     st.markdown("### 🚀 Nhanh chóng - (Gần) Chính xác - (Sắp) Chuyên nghiệp - Và JUST FOR FUN 😎")
@@ -205,7 +197,6 @@ if not uploaded_file:
 else:
     # --- XỬ LÝ DỮ LIỆU ---
     with st.container():
-        # Thanh trạng thái
         with st.status("Đang phân tích dữ liệu...", expanded=True) as status:
             time.sleep(0.3)
             st.write("📄 Đang đọc và làm sạch file...")
@@ -230,12 +221,11 @@ else:
                 body_raw = raw_text[:matches[-1].start()]
                 ref_raw = raw_text[split_idx:]
             
-            # Preprocess (Nối từ, xóa xuống dòng)
             body_text = preprocess_text(body_raw)
             ref_lines = [line.strip() for line in ref_raw.split('\n') if len(line.strip()) > 10 and re.search(r'\d{4}', line)]
 
             st.write("🧠 Đang chạy thuật toán AI Fuzzy Matching...")
-            citations = find_citations_v9(body_text)
+            citations = find_citations_v10(body_text)
 
             # --- LOGIC CHECK (FUZZY) ---
             missing_refs = []
@@ -267,14 +257,12 @@ else:
     
     st.markdown("<h3 style='margin-top: 20px;'>📊 Tổng quan (Dashboard)</h3>", unsafe_allow_html=True)
     
-    # === MỤC LƯU Ý MỚI THÊM VÀO ĐÂY ===
     st.markdown("""
     <div style="background-color: #ffe6e6; border: 1px solid #ffcccc; padding: 10px; border-radius: 5px; color: #cc0000; margin-bottom: 15px; font-size: 14px;">
         <b>⚠️ LƯU Ý:</b> Những trích dẫn bị xuống dòng trong bản thảo (ví dụ <i>Rasmussen</i> thành <i>Ras-mussen</i>) có thể bị báo lỗi thiếu trích dẫn do hạn chế của việc trích xuất văn bản PDF. Vui lòng kiểm tra lại thủ công.
     </div>
     """, unsafe_allow_html=True)
-    # ==================================
-
+    
     st.markdown('<p class="beta-note">(*) Kết quả dựa trên AI Fuzzy Logic. Vui lòng kiểm tra lại thủ công các mục báo lỗi.</p>', unsafe_allow_html=True)
     
     # Metrics
