@@ -90,7 +90,7 @@ def is_garbage(text):
         'sơ đồ', 'phương trình', 'công thức', 'hệ số', 'giá trị', 'tỉ lệ', 'kết quả', 
         'đoạn', 'phần', 'mục', 'bản đồ', 'giai đoạn', 'số', 'nghiên cứu', 'phân tích', 
         'đánh giá', 'đối với', 'của', 'bởi', 'được', 'trong', 'tại', 
-        'tương đương', 'dao động', 'đến', 'từ' # <--- Thêm từ khóa mới
+        'tương đương', 'tương đương với', 'dao động', 'đến', 'từ' # <--- Thêm từ khóa mới
     ]
     for word in blacklist:
         if re.search(r'\b' + re.escape(word) + r'\b', text_lower):
